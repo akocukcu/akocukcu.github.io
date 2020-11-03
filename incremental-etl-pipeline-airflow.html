@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="">
+  <meta name="author" content="">
+
+  <title>Let's build an incremental ETL pipeline with Apache Airflow</title>
+
+  <!-- Bootstrap core CSS -->
+  <link href="vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Custom fonts for this template -->
+  <link href="vendor/fontawesome-free/css/all.min.css" rel="stylesheet" type="text/css">
+  <link href='https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic' rel='stylesheet' type='text/css'>
+  <link href='https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800' rel='stylesheet' type='text/css'>
+
+  <!-- Custom styles for this template -->
+  <link href="css/clean-blog.min.css" rel="stylesheet">
+
+</head>
+
+<body>
+
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-light fixed-top" id="mainNav">
+    <div class="container">
+      <a class="navbar-brand" href="index.html">akocukcu</a>
+      <button class="navbar-toggler navbar-toggler-right" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+        Menu
+        <i class="fas fa-bars"></i>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarResponsive">
+        <ul class="navbar-nav ml-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="index.html">Home</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="about.html">About</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page Header -->
+  <header class="masthead" style="background-image: url('img/post-bg.jpg')">
+    <div class="overlay"></div>
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 col-md-10 mx-auto">
+          <div class="post-heading">
+            <h1>Let's build an incremental ETL pipeline</h1>
+            <h2 class="subheading">with Apache Airflow</h2>
+            <span class="meta">Posted by
+              <a href="about.html">akocukcu</a>
+              on November 1, 2020</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Post Content -->
+  <article>
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 col-md-10 mx-auto">
+          <p>When we look at the etl examples available, they generally explain how to bulk load full data from one table to another. But in reality most of the time we are dealing with incremental load.</p>
+
+          <p>In this post I'm going to explain how to build an <b>incremental etl pipeline</b> on Sql Server by using Airflow.</p>
+
+          <h2 class="section-heading">Problem Definition</h2>
+
+          <p>Imagine that you have started working as a data engineer at your new company. An issue has already been waiting for you: </p>
+
+          <p>There is an OLTP table with millions of rows. Insert and update operations occur constantly (fortunately you are in good hands and there are not any delete operations 😊 )</p>
+
+          <p>You are going to build an etl pipeline for this table. But in an incremental way just for the new or updated rows.</p>
+
+          <h2 class="section-heading">Possible Solutions</h2>
+
+          <p>We can build that pipeline with different approaches. Also there may be different settings depending on database engine.</p>
+
+          <p>In this case our company uses Sql Server for both the OLTP database and the datawarehouse. So we will implement according to that scenario.</p>
+
+          <p><b>1- Full Load:</b></p>
+
+          <p>Upserting the whole data everytime</p>
+
+          <p>You may consider this as an icremental operation, just because we do not TRUNCATE destination table but instead UPSERT it. However I do not accept this as a solution for icremental case. Because it is not performant even for now. Also it will be much worse if your OLTP gets bigger.</p>
+
+          <p><b>2- Control Table Approach:</b></p>
+
+          <p>In this approach you will have a control table about the ETL process. That table will store definitions like: [SourceTableName], [DestinationTableName], [SourceTableFilterValue*], [LastEtlDate] etc.</p>
+
+          <p>* Here "SourceTableFilterValue" is the most critical information. Depending on your case that might be: "Timestamp value" or "Primary Key Column" of the source table etc..</p>
+
+          <p>In the extraction phase you will extract only new or updated data by applying filter with this value.</p>
+
+          <p>As you might guess, after every etl process this value must be updated on the control table. Because on the next run you will use that new value for filtering.</p>
+
+          <p>Even though this approach is lean and easy to apply, it still needs some setup:</p>
+
+          <p>1- Having a primary key (or just a unique constrainted) column.</p>
+
+          <p>2- Having a Timestamp (kind of) column. You will use maximum value of it as "SourceTableFilterValue".</p>
+
+          <p>(I definitely prefer Sql Server's built-in <a href="https://docs.microsoft.com/en-us/sql/t-sql/data-types/rowversion-transact-sql">rowversion</a> data type. Because it catches the row change and update itself automatically.)</p>
+
+          <p>Depending on your case (for example if oltp table won't be updated) you can just use Primary Key colum or something like CreatedOn column.</p>
+
+          <p>Or if you trust your application, you can even use a simple datetime column (such as ModifiedOn) for tables that updated. But that assumption will be so naive and dangerous.</p>
+
+          <p>3- Finally, it's a no-brainer to have index on the filter column which you choose.</p>
+
+          <p><b>3- CDC Approach:</b></p>
+
+          <p>I will cover CDC in a later post. For now I can just say that CDC requires more setups (also DBA efforts ...) and depends on the DB engine. But on the other side, it gives us details about changes (which operation, which column etc.) , catches DELETE operations and can be used as a streaming data tool.</p>
+
+          <h2 class="section-heading">Workflow</h2>
+
+          <p>After selecting one of the approaches above and finishing setups, the only thing we should do is to create a DAG with our favourite workflow platform "Apache Airflow" 😍 .</p>
+
+          <a href="#">
+            <img class="img-fluid" src="img/incremental-etl-draw.png" alt="The workflow that will be implemented on Apache Airflow">
+          </a>
+          <span class="caption text-muted">The workflow that will be implemented on Apache Airflow</span>
+
+          <p>1- In order to apply filter, we will get SourceTableFilterValue (maximum Timestamp value in this case) from Control Table.</p>
+
+          <blockquote class="blockquote">We will get SourceTableFilterValue with MsSqlOperator and push it to the next task with an XCOM.</blockquote>
+
+          <p>2- We will transfer (filtered query) data from OLTP table to Staging table by using GenericTransfer.</p>
+
+          <blockquote class="blockquote">(Actually we can load data directly to datawarehouse table without using a Staging table. But it has some drawbacks such as: implementing transformations inside transfer task, being constrained to use upsert instead of fast and bulk insert)</blockquote>
+
+          <p>3- Since we transfered the data to destination server, we can upsert it from Staging table to datawarehouse in a controlled, flexible* and fast way. We can apply any transformations we want (add calculated new columns, elect columns etc.). Since both tables are on the same server you can encapsulate your sql script in a Stored Procedure and run it from MsSqlOperator in a lean way.</p>
+
+          <blockquote class="blockquote">You can load data from Staging table to datawarehouse table in different ways. Most people use built in MERGE statement for sql server. But I prefer not to use it at all because of performance and concurrency issues. Also putting a large MERGE statement into an Airflow task or a general Python code will constrain us while both developing and maintaing.</blockquote>
+
+          <p>4- Finally, We can update SourceTableFilterValue on Control Table as maximum TimestampValue of Staging table.</p>
+
+          <h2 class="section-heading">Code</h2>
+
+          <p>While building the pipeline and testing performance, I have used 1 million rows of data from insideairbnb. Also my testing database server was a db.m5.large AWS RDS istance. Airflow was deployed on an ubuntu EC2 instance within the same region.</p>
+
+          <a href="#">
+            <img class="img-fluid" src="img/data.png" alt="The data that I used for performance testing">
+          </a>
+          <span class="caption text-muted">The data that I used for performance testing (from http://insideairbnb.com/)</span>
+
+          <p>For the sake of simplicity I added just two gist links: </p>
+
+          <a href="https://gist.github.com/akocukcu/037fdef5db038506d4f9fb78cae62979">https://gist.github.com/akocukcu/037fdef5db038506d4f9fb78cae62979</a>
+          <blockquote class="blockquote">This one just inserts oltp data to staging table without control and executes merge procedure on sql server afterwards.</blockquote>
+
+          <a href="https://gist.github.com/akocukcu/ac0ec9f4e9b1469888bb7345bb740eed">https://gist.github.com/akocukcu/ac0ec9f4e9b1469888bb7345bb740eed</a>
+          <blockquote class="blockquote">This one merges into datawarehouse with control and poor performance.</blockquote>
+
+          <p>Also you can have a look at the stored procedure script (that use in the first method):</p>
+          <a href="https://gist.github.com/akocukcu/dc41bc289587a2c80de40904e873a8fe">https://gist.github.com/akocukcu/dc41bc289587a2c80de40904e873a8fe</a>
+
+          <h2 class="section-heading">Performance Benchmark</h2>
+          <p>With the first method merging 100000 rows (50000 update and 50000 insert) took 77 seconds.</p>
+          <p>With the second method merging 100000 rows (50000 update and 50000 insert) took 20 <b>MINUTES</b>.</p>
+
+          <h2 class="section-heading">Conclusion</h2>
+          <p>As you can see choosing proposed (first) method gives us a better performance, development flexibility and a lean DAG.</p>
+
+          <p>That's it for this post. Thank you for reading.</p>
+
+          <p><b>Refferences:</b> <br> You can read about different UPSERT methods and also MERGE issues from:
+            <br><a href="https://michaeljswart.com/2017/07/sql-server-upsert-patterns-and-antipatterns/">https://michaeljswart.com/2017/07/sql-server-upsert-patterns-and-antipatterns/</a>
+            <br><a href="https://sqlperformance.com/2020/09/locking/upsert-anti-pattern">https://sqlperformance.com/2020/09/locking/upsert-anti-pattern</a>
+            <br><a href="https://www.mssqltips.com/sqlservertip/3074/use-caution-with-sql-servers-merge-statement/">https://www.mssqltips.com/sqlservertip/3074/use-caution-with-sql-servers-merge-statement/</a>
+            <br><a href="https://michaeljswart.com/2012/08/be-careful-with-the-merge-statement/">https://michaeljswart.com/2012/08/be-careful-with-the-merge-statement/</a><br></p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <hr>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="row">
+        <div class="col-lg-8 col-md-10 mx-auto">
+          <ul class="list-inline text-center">
+            <li class="list-inline-item">
+              <a href="https://twitter.com/akocukcu">
+                <span class="fa-stack fa-lg">
+                  <i class="fas fa-circle fa-stack-2x"></i>
+                  <i class="fab fa-twitter fa-stack-1x fa-inverse"></i>
+                </span>
+              </a>
+            </li>
+            <li class="list-inline-item">
+              <a href="https://www.linkedin.com/in/abdurrahman-kocukcu-729b1336/">
+                <span class="fa-stack fa-lg">
+                  <i class="fas fa-circle fa-stack-2x"></i>
+                  <i class="fab fa-linkedin fa-stack-1x fa-inverse"></i>
+                </span>
+              </a>
+            </li>
+            <li class="list-inline-item">
+              <a href="https://github.com/akocukcu">
+                <span class="fa-stack fa-lg">
+                  <i class="fas fa-circle fa-stack-2x"></i>
+                  <i class="fab fa-github fa-stack-1x fa-inverse"></i>
+                </span>
+              </a>
+            </li>
+          </ul>
+          <p class="copyright text-muted">Copyright &copy; akocukcu 2020</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap core JavaScript -->
+  <script src="vendor/jquery/jquery.min.js"></script>
+  <script src="vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Custom scripts for this template -->
+  <script src="js/clean-blog.min.js"></script>
+
+</body>
+
+</html>
